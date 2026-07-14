@@ -71,7 +71,32 @@ but frame decoding is left to the Planner unit.
 / fault), `status.telemetry` (cyan = live telemetry). Monospace with tabular
 figures is the default so telemetry columns align.
 
+## Views
+
+The app shell (`src/App.tsx`) is a hash-routed switcher — `#/fleet` (the
+default landing view) and `#/metrics` — so each view is a shareable, reloadable
+URL that stays robust under FastAPI StaticFiles (no server catch-all needed).
+
+- **Fleet** (`src/features/fleet/`) — a board of active-run "station cards"
+  from `GET /runs`, refreshed by **TanStack Query polling every ~4s** (not SSE —
+  matching the fleet decision). Each card shows status (color **and** a
+  redundant glyph/label), target, task type (sim/burn), a cost-honest readout,
+  and a T+ elapsed clock. Cost-honesty is enforced in
+  `features/fleet/CostReadout.tsx`: a pre-terminal run reads **UNRECONCILED**
+  (amber), becoming a green reconciled dollar figure only once the run is
+  terminal — a `$0` is never shown as "free". Target / time-window / paging
+  filters go to the seam; status filter and sort are applied client-side over
+  the page.
+- **Metrics** (`src/features/metrics/`) — cost/quality rollups from
+  `GET /metrics`, scoped by target + time window via the endpoint's query
+  params. Renders scoped rollup figures and trend sparklines (Recharts). The
+  rollup payload is free-form JSON, so `src/lib/metrics.ts` reads it
+  defensively — it renders the numbers it can interpret and skips the rest,
+  never fabricating a figure. Lazy-loaded so the charting lib stays out of the
+  Fleet landing bundle.
+
 ## Scope
 
-This directory is the entire SPA. The Fleet, Run station, Gate, Metrics, and
-Planner views are built in later units.
+This directory is the entire SPA. This unit lands the Fleet and Metrics views;
+the Run station, Gate, and Planner views are built in later units — the Fleet
+card's "Station ▸" affordance is a non-functional placeholder until then.
