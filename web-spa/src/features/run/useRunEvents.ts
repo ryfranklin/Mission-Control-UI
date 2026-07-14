@@ -34,7 +34,7 @@ export type FeedConnection = 'connecting' | 'open' | 'closed' | 'error'
 export interface RunEventsSnapshot {
   /** Every frame, ordered — node transitions and the terminal frame. */
   items: TimelineItem[]
-  /** Node-transition frames only (what the timeline renders). */
+  /** What the timeline renders: node transitions plus per-step telemetry rows. */
   transitions: TimelineItem[]
   /** Rail node id → illumination phase. */
   railPhases: Record<string, NodePhase>
@@ -51,6 +51,7 @@ export interface RunEventsSnapshot {
 // classified from their payload (see normalizeFrame).
 const NAMED_EVENTS = [
   'node_transition',
+  'step_metric',
   'terminal',
   'run_complete',
   'run_completed',
@@ -117,7 +118,13 @@ export function useRunEvents(runId: string, enabled = true): RunEventsSnapshot {
     const items = Array.from(framesRef.current.values()).sort(
       (a, b) => a.seq - b.seq || a.arrival - b.arrival,
     )
-    const transitions = items.filter((it) => it.kind === 'node_transition')
+    // The timeline renders node transitions AND per-step telemetry rows; rail
+    // illumination is derived from node transitions only (step_metric frames
+    // carry no phase and must not perturb the rail).
+    const nodeTransitions = items.filter((it) => it.kind === 'node_transition')
+    const transitions = items.filter(
+      (it) => it.kind === 'node_transition' || it.kind === 'step_metric',
+    )
     const terminal = items.find((it) => it.kind === 'terminal') ?? null
     const terminalState: TerminalState | null =
       terminal && terminal.status
@@ -126,7 +133,7 @@ export function useRunEvents(runId: string, enabled = true): RunEventsSnapshot {
     return {
       items,
       transitions,
-      railPhases: deriveRailPhases(transitions, terminalState),
+      railPhases: deriveRailPhases(nodeTransitions, terminalState),
       accruedCost: accrueCost(items),
       tokenTally: accrueTokens(items),
       terminal: terminalState,
