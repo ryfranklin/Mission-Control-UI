@@ -45,7 +45,7 @@ units:
 - depends_on: []
   phase: INCEPTION
   seq: 1
-  status: pending
+  status: done
   task_type: sim
   title: Requirements Analysis
 - depends_on: []
