@@ -88,7 +88,7 @@ export interface StepTelemetry {
   model: string | null
 }
 
-export type ItemKind = 'node_transition' | 'terminal' | 'other'
+export type ItemKind = 'node_transition' | 'step_metric' | 'terminal' | 'other'
 
 export interface TimelineItem {
   /** Event id — the dedup key. Native `Last-Event-ID` value for this frame. */
@@ -220,7 +220,14 @@ export function isFaultStatus(status: string | null | undefined): boolean {
 const SCRUB_TERMINAL = new Set(['scrubbed', 'rejected', 'no_go', 'nogo', 'cancelled', 'canceled', 'aborted'])
 
 function extractTelemetry(rec: Record<string, unknown>): StepTelemetry | null {
-  const t = asRecord(rec.telemetry) ?? asRecord(rec.metrics) ?? asRecord(rec.usage) ?? rec
+  // `step_metric` frames nest the usage payload under `event`; unwrap it so the
+  // token/cost fields are read from there rather than the empty envelope.
+  const t =
+    asRecord(rec.telemetry) ??
+    asRecord(rec.metrics) ??
+    asRecord(rec.usage) ??
+    asRecord(rec.event) ??
+    rec
   const tokens = firstNumber(t, ['tokens', 'total_tokens', 'token_count', 'tok'])
   const inputTokens = firstNumber(t, ['input_tokens', 'prompt_tokens', 'tokens_in'])
   const outputTokens = firstNumber(t, ['output_tokens', 'completion_tokens', 'tokens_out'])
@@ -323,6 +330,38 @@ export function normalizeFrame(
       status: statusStr,
       costUsd: firstNumber(rec, ['cost_usd', 'cost', 'usd', 'total_cost_usd']),
       at,
+    }
+  }
+
+  // A `step_metric` frame carries per-step token telemetry nested under `event`.
+  // It is the ONLY frame with per-step tokens, so it feeds both the timeline's
+  // telemetry rows and the cost ticker's token tally. Tokens are actuals; its
+  // cost accrues pre-terminal but the reconciled mission cost still comes from
+  // the terminal frame (CostTicker prefers terminal.costUsd when settled).
+  const isStepMetric = name === 'step_metric' || typeField === 'step_metric'
+  if (isStepMetric) {
+    const eventRec = asRecord(rec.event) ?? rec
+    const metricNodeRaw = firstString(eventRec, ['node', 'step', 'stage', 'node_id']) ?? rawNode
+    const metricNode = normalizeNode(metricNodeRaw)
+    const stepId = firstString(eventRec, ['step_id', 'id'])
+    return {
+      id,
+      seq,
+      arrival,
+      kind: 'step_metric',
+      node: metricNode,
+      rawNode: metricNodeRaw,
+      nodeLabel: metricNode
+        ? nodeLabel(metricNode)
+        : stepId
+          ? `Step ${stepId}`
+          : 'Step Telemetry',
+      phase: null,
+      detail,
+      telemetry: extractTelemetry(rec),
+      status: null,
+      costUsd: null,
+      at: at ?? parseTimestamp(firstString(eventRec, ['at', 'ts', 'timestamp', 'time'])),
     }
   }
 
