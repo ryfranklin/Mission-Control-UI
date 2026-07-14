@@ -1,9 +1,18 @@
 mode: greenfield
 requirements:
+- key: cloud_target
+  state: ready
+  value: aws
 - key: integration_strategy
   state: ready
   value: SPA in-repo at web-spa/; Vite dev-proxy to localhost API; prod served same-origin
     via FastAPI StaticFiles; no CORS, no backend edits until gated
+- key: non_goals
+  state: ready
+  value: auth/login, multi-user/RBAC, mobile — localhost single-operator only
+- key: personas
+  state: ready
+  value: Single Operator persona with six modes; no auth/RBAC in v1
 - key: read_only_constraint
   state: ready
   value: No repo modification; port plan authored for operator to run in ~/repos/Mission-Control
@@ -17,6 +26,9 @@ requirements:
   state: ready
   value: React EventSource over /runs/{id}/events and /plans/{id}/turns/stream JSON-event
     feeds
+- key: stories
+  state: ready
+  value: 8 build-ready stories mapped 1:1 to six units
 - key: type_generation
   state: ready
   value: openapi-typescript run against live /openapi.json (not templates) for typed
@@ -78,3 +90,9 @@ units:
   status: pending
   task_type: burn
   title: Prod StaticFiles mount of the SPA build (gated backend line)
+- depends_on: []
+  phase: INCEPTION
+  seq: 8
+  status: pending
+  task_type: sim
+  title: Workflow Planning
