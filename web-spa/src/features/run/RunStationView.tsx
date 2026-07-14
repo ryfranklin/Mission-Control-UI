@@ -108,6 +108,7 @@ export function RunStationView({ runId, onExit }: { runId: string; onExit: () =>
                   tokenTally={feed.tokenTally}
                   terminal={terminal}
                   liveStatus={run.status}
+                  reconciledCost={run.cost_usd}
                 />
                 <GatePanel awaitingGate={awaitingGate} inFlight={inFlight} actions={actions} />
                 {showGateDiff && (

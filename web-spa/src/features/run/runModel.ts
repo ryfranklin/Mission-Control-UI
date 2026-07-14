@@ -105,6 +105,12 @@ export interface TimelineItem {
   /** Node label for display. */
   nodeLabel: string
   phase: NodePhase | null
+  /**
+   * Raw `update` sub-object of a `node_transition` frame (the seam sends
+   * `{node, update}`) — carries the structured decision / push / outcome that
+   * refines a rail node's phase. Null on non-transition frames.
+   */
+  update: Record<string, unknown> | null
   /** Free-form detail line, when present. */
   detail: string | null
   telemetry: StepTelemetry | null
@@ -325,6 +331,7 @@ export function normalizeFrame(
       rawNode,
       nodeLabel: 'Terminal',
       phase: null,
+      update: null,
       detail,
       telemetry: extractTelemetry(rec),
       status: statusStr,
@@ -357,6 +364,7 @@ export function normalizeFrame(
           ? `Step ${stepId}`
           : 'Step Telemetry',
       phase: null,
+      update: null,
       detail,
       telemetry: extractTelemetry(rec),
       status: null,
@@ -377,6 +385,9 @@ export function normalizeFrame(
     rawNode,
     nodeLabel: node ? nodeLabel(node) : rawNode ?? 'Step',
     phase: normalizePhase(firstString(rec, ['phase', 'state', 'status', 'transition'])),
+    // The seam's node_transition carries `{node, update}` with no phase field;
+    // keep the raw update so deriveRailPhases can refine the node's phase.
+    update: asRecord(rec.update),
     detail,
     telemetry: extractTelemetry(rec),
     status: null,
@@ -400,11 +411,66 @@ export interface TerminalState {
 }
 
 /**
- * Derive each rail node's phase from the ordered transitions. We only promote
- * state we can justify: a node whose flow the run has demonstrably moved past
- * settles to `done`; nodes never reported stay `pending` (dim) rather than
- * inventing completion. On a terminal frame, any still-active node settles —
- * `done` on a clean finish, `fault` on a NO-GO / scrub.
+ * Refine a rail node's phase from the structured `update` sub-object of a
+ * `node_transition` frame (`{node, update}`). Returns a settled phase only when
+ * the update is decisive for that node, else null (so the caller falls back to
+ * the arrival-based baseline). Defensive: an explicit phase/status nested in the
+ * update is always honored, even if a future seam adds one.
+ */
+function refineFromUpdate(
+  nodeId: string,
+  update: Record<string, unknown> | null,
+): NodePhase | null {
+  if (!update) return null
+
+  // Honor an explicit phase/status if the frame ever nests one.
+  const explicit = normalizePhase(firstString(update, ['phase', 'state', 'status', 'transition']))
+  if (explicit) return explicit
+
+  if (nodeId === 'gate') {
+    const decision = firstString(update, ['decision', 'verdict', 'result', 'gate'])
+    const d = decision ? normalizeToken(decision) : null
+    if (d) {
+      if (['no_go', 'nogo', 'reject', 'rejected', 'deny', 'denied'].some((k) => d === k || d.includes(k))) {
+        return 'fault'
+      }
+      if (['go', 'approve', 'approved', 'pass', 'passed'].includes(d)) return 'done'
+    }
+  } else if (nodeId === 'apply_burn') {
+    if (update.applied === true) return 'done'
+    const push = firstString(update, ['push_status', 'push', 'status', 'disposition'])
+    const p = push ? normalizeToken(push) : null
+    if (p) {
+      if (['pushed', 'push', 'skipped', 'skip'].includes(p)) return 'done'
+      if (['rejected', 'reject', 'error', 'errored', 'failed', 'failure'].includes(p)) return 'fault'
+    }
+  } else if (nodeId === 'teardown') {
+    const outcome = firstString(update, ['outcome', 'result', 'status'])
+    const o = outcome ? normalizeToken(outcome) : null
+    if (o) {
+      if (['completed', 'complete', 'done', 'succeeded', 'success', 'ok', 'finished'].includes(o)) {
+        return 'done'
+      }
+      if (['failed', 'failure', 'error', 'errored'].includes(o)) return 'fault'
+    }
+  }
+  return null
+}
+
+/**
+ * Derive each rail node's phase from the ordered transitions.
+ *
+ * The seam's `node_transition` frames carry no phase field — just `{node,
+ * update}` — so the ARRIVAL of a transition for a node is the signal that the
+ * node was reached. Every reached rail node is therefore at least `done`; the
+ * single furthest-progressed node reached stays `active` until either a later
+ * node is reached (then it settles `done`) or the terminal frame arrives. Where
+ * a transition's `update` is decisive we refine past the baseline: a gate NO-GO
+ * lights `fault`, a rejected push `fault`, a clean decision/push/teardown `done`.
+ * Nodes never reported stay `pending` (dim) — we never invent completion. On the
+ * terminal frame any still-`active` node settles (`done` clean, `fault` on a
+ * NO-GO / scrub) and the scrub node lights on the abort path. An explicit
+ * phase/status on any frame is always honored.
  */
 export function deriveRailPhases(
   transitions: TimelineItem[],
@@ -413,18 +479,38 @@ export function deriveRailPhases(
   const phases: Record<string, NodePhase> = {}
   for (const n of ALL_NODES) phases[n.id] = 'pending'
 
+  // Group the transitions that touched each node, and find the furthest rail
+  // node reached (arrival of a transition == that node was reached).
+  const touched: Record<string, TimelineItem[]> = {}
   let maxIdx = -1
   for (const t of transitions) {
-    if (!t.node || !t.phase) continue
-    phases[t.node] = t.phase
+    if (!t.node) continue
+    ;(touched[t.node] ??= []).push(t)
     const idx = RAIL_INDEX[t.node]
     if (idx != null && idx > maxIdx) maxIdx = idx
   }
 
-  // Flow moved past an earlier node ⇒ it finished (unless it faulted).
+  // Each reached rail node: refine from its explicit phase / update where the
+  // frame gave us something decisive, else the arrival baseline (furthest =
+  // active, everything earlier = done).
   RAIL_NODES.forEach((n, i) => {
-    if (i < maxIdx && phases[n.id] === 'active') phases[n.id] = 'done'
+    const items = touched[n.id]
+    if (!items || items.length === 0) return
+    let refined: NodePhase | null = null
+    for (const t of items) {
+      const p = t.phase ?? refineFromUpdate(n.id, t.update)
+      if (p) refined = p
+    }
+    phases[n.id] = refined ?? (i === maxIdx ? 'active' : 'done')
   })
+
+  // The scrub node sits off the nominal rail: reaching it is the abort path.
+  const scrubItems = touched.scrub
+  if (scrubItems && scrubItems.length > 0) {
+    let refined: NodePhase | null = null
+    for (const t of scrubItems) if (t.phase) refined = t.phase
+    phases.scrub = refined ?? 'fault'
+  }
 
   if (terminal) {
     const fault = isFaultStatus(terminal.status)
