@@ -1,5 +1,26 @@
 mode: greenfield
-requirements: []
+requirements:
+- key: integration_strategy
+  state: ready
+  value: SPA in-repo at web-spa/; Vite dev-proxy to localhost API; prod served same-origin
+    via FastAPI StaticFiles; no CORS, no backend edits until gated
+- key: read_only_constraint
+  state: ready
+  value: No repo modification; port plan authored for operator to run in ~/repos/Mission-Control
+- key: screen_endpoint_map
+  state: ready
+  value: 'Each htmx template maps to a React view over existing endpoints: Fleet→GET
+    /runs,/targets; Metrics→GET /metrics; Launch→POST /runs; Run station→GET /runs/{id},/changes,/events(SSE),POST
+    approve/reject/scrub/cancel; Plan list→GET/POST /plans; Planner→GET /plans/{id},POST
+    /turns,/turns/stream(SSE),/finalize'
+- key: sse_consumption
+  state: ready
+  value: React EventSource over /runs/{id}/events and /plans/{id}/turns/stream JSON-event
+    feeds
+- key: type_generation
+  state: ready
+  value: openapi-typescript run against live /openapi.json (not templates) for typed
+    client
 schema: 1
 status: drafting
 units:
@@ -9,3 +30,51 @@ units:
   status: pending
   task_type: sim
   title: Workspace Detection
+- depends_on: []
+  phase: INCEPTION
+  seq: 1
+  status: pending
+  task_type: sim
+  title: Requirements Analysis
+- depends_on: []
+  phase: CONSTRUCTION
+  seq: 2
+  status: pending
+  task_type: burn
+  title: Scaffold Vite + React + TS at web-spa/ with dev-proxy to API
+- depends_on:
+  - 2
+  phase: CONSTRUCTION
+  seq: 3
+  status: pending
+  task_type: burn
+  title: openapi-typescript /openapi.json → typed client + thin fetch wrapper
+- depends_on:
+  - 3
+  phase: CONSTRUCTION
+  seq: 4
+  status: pending
+  task_type: burn
+  title: Fleet + Metrics views (polled)
+- depends_on:
+  - 4
+  phase: CONSTRUCTION
+  seq: 5
+  status: pending
+  task_type: burn
+  title: 'Run station: detail, changes/go-no-go, SSE timeline, gate controls'
+- depends_on:
+  - 5
+  phase: CONSTRUCTION
+  seq: 6
+  status: pending
+  task_type: burn
+  title: 'Planner session: transcript + live plan panel, post-turn, SSE reply stream,
+    finalize'
+- depends_on:
+  - 6
+  phase: CONSTRUCTION
+  seq: 7
+  status: pending
+  task_type: burn
+  title: Prod StaticFiles mount of the SPA build (gated backend line)
