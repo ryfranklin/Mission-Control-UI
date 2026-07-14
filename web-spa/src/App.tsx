@@ -8,13 +8,33 @@
 import { lazy, Suspense } from 'react'
 
 import { FleetView } from './features/fleet/FleetView'
-import { useHashRoute } from './lib/useHashRoute'
+import { useHashPath, useHashRoute } from './lib/useHashRoute'
 
 // Metrics pulls in the charting lib — lazy-load it so the default Fleet landing
 // bundle stays lean and the charts arrive only when that view is opened.
 const MetricsView = lazy(() =>
   import('./features/metrics/MetricsView').then((m) => ({ default: m.MetricsView })),
 )
+
+// The Run station carries the live SSE machinery — lazy-load it so it arrives
+// only when an operator drills into a specific run.
+const RunStationView = lazy(() =>
+  import('./features/run/RunStationView').then((m) => ({ default: m.RunStationView })),
+)
+
+/** Match the nested run-station route `#/runs/{id}` off the shared hash router. */
+function matchRun(path: string): string | null {
+  const m = /^runs\/(.+)$/.exec(path)
+  return m ? decodeURIComponent(m[1]) : null
+}
+
+function PanelFallback({ label }: { label: string }) {
+  return (
+    <div className="mc-panel p-10 text-center text-sm uppercase tracking-wider text-status-flight">
+      ◆ {label}
+    </div>
+  )
+}
 
 const VIEWS = ['fleet', 'metrics'] as const
 type View = (typeof VIEWS)[number]
@@ -26,6 +46,8 @@ const NAV: Array<{ key: View; label: string; caption: string }> = [
 
 export default function App() {
   const [view, navigate] = useHashRoute<View>(VIEWS, 'fleet')
+  const path = useHashPath()
+  const runId = matchRun(path)
 
   return (
     <div className="min-h-full bg-console-void text-readout">
@@ -41,7 +63,7 @@ export default function App() {
 
           <nav aria-label="Views" className="flex items-center gap-1">
             {NAV.map((item) => {
-              const active = item.key === view
+              const active = !runId && item.key === view
               return (
                 <button
                   key={item.key}
@@ -79,16 +101,14 @@ export default function App() {
       </header>
 
       <main className="mx-auto max-w-7xl px-6 py-6">
-        {view === 'fleet' ? (
+        {runId ? (
+          <Suspense fallback={<PanelFallback label="Opening run station…" />}>
+            <RunStationView runId={runId} onExit={() => navigate('fleet')} />
+          </Suspense>
+        ) : view === 'fleet' ? (
           <FleetView />
         ) : (
-          <Suspense
-            fallback={
-              <div className="mc-panel p-10 text-center text-sm uppercase tracking-wider text-status-flight">
-                ◆ Loading metrics…
-              </div>
-            }
-          >
+          <Suspense fallback={<PanelFallback label="Loading metrics…" />}>
             <MetricsView />
           </Suspense>
         )}

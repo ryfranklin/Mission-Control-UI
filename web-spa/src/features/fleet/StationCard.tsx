@@ -58,14 +58,14 @@ export function StationCard({ run, now }: { run: RunDetail; now: number }) {
         <span className="truncate font-mono text-[0.65rem] text-readout-muted" title={run.run_id}>
           {run.run_id}
         </span>
-        {/* Run station is a later unit — placeholder affordance, not yet wired. */}
-        <span
-          aria-disabled
-          title="Run station — available in a later unit"
-          className="cursor-not-allowed select-none whitespace-nowrap text-[0.6rem] uppercase tracking-wider text-readout-dim"
+        {/* Opens the Run station via the shared hash route (#/runs/{id}). */}
+        <a
+          href={`#/runs/${encodeURIComponent(run.run_id)}`}
+          title="Open run station"
+          className="whitespace-nowrap text-[0.6rem] uppercase tracking-wider text-status-telemetry hover:text-readout focus:outline-none focus-visible:text-readout"
         >
           Station ▸
-        </span>
+        </a>
       </footer>
     </article>
   )

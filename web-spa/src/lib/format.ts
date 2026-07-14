@@ -66,6 +66,16 @@ export function formatTimestamp(iso: string | null | undefined): string {
   return t == null ? '—' : DATETIME.format(t)
 }
 
+/**
+ * A latency reading from milliseconds: `820ms` under a second, `1.24s` above.
+ * Non-finite input renders as `—`.
+ */
+export function formatLatency(ms: number | null | undefined): string {
+  if (ms == null || !Number.isFinite(ms)) return '—'
+  if (ms < 1000) return `${Math.round(ms)}ms`
+  return `${(ms / 1000).toFixed(2)}s`
+}
+
 /** Turn a snake_case metric key into a Title Case label. */
 export function humanizeKey(key: string): string {
   return key
