@@ -127,7 +127,7 @@ export function MetricsView() {
           {(telemetryEntries.length > 0 || judgeEntries.length > 0) && (
             <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
               {telemetryEntries.length > 0 && (
-                <Panel title="Telemetry rollup">
+                <Panel title="Telemetry rollup" subtitle="Token usage & cost">
                   <dl className="grid grid-cols-2 gap-3 sm:grid-cols-3">
                     {telemetryEntries.map(([k, v]) => (
                       <Figure key={k} metricKey={k} value={v} />

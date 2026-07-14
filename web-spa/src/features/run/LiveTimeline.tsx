@@ -1,7 +1,13 @@
 import { useLayoutEffect, useRef } from 'react'
 
-import { formatLatency, formatMoney, formatNumber, formatTimestamp } from '../../lib/format'
-import { PHASE_GLYPH, type NodePhase, type TimelineItem } from './runModel'
+import {
+  formatLatency,
+  formatMoney,
+  formatNumber,
+  formatTimestamp,
+  formatTokens,
+} from '../../lib/format'
+import { PHASE_GLYPH, type NodePhase, type StepTelemetry, type TimelineItem } from './runModel'
 
 /**
  * LIVE SSE TIMELINE — every `node_transition` frame as a scrolling log line
@@ -17,12 +23,72 @@ const PHASE_ACCENT: Record<NodePhase, { text: string; border: string }> = {
   fault: { text: 'text-status-fault', border: 'border-status-fault/60' },
 }
 
+interface Cell {
+  label: string
+  value: string
+  /** Screen-reader text so a figure never rides its glyph/color alone. */
+  aria?: string
+  /** Native tooltip for detail that doesn't fit inline (e.g. cache breakdown). */
+  title?: string
+  accent?: string
+}
+
+/** The `in <input> / out <output> tok` breakdown cell, when either side lands. */
+function tokenCell(t: StepTelemetry): Cell | null {
+  const parts: string[] = []
+  const aria: string[] = []
+  if (t.inputTokens != null) {
+    parts.push(`in ${formatTokens(t.inputTokens)}`)
+    aria.push(`${formatNumber(t.inputTokens)} input tokens`)
+  }
+  if (t.outputTokens != null) {
+    parts.push(`out ${formatTokens(t.outputTokens)}`)
+    aria.push(`${formatNumber(t.outputTokens)} output tokens`)
+  }
+  if (parts.length) {
+    return { label: 'tok', value: `${parts.join(' / ')} tok`, aria: aria.join(', ') }
+  }
+  // No split, but a total was reported — surface that rather than nothing.
+  if (t.tokens != null) {
+    return { label: 'tok', value: `${formatTokens(t.tokens)} tok`, aria: `${formatNumber(t.tokens)} tokens` }
+  }
+  return null
+}
+
 function Telemetry({ item }: { item: TimelineItem }) {
   const t = item.telemetry
   if (!t) return null
-  const cells: Array<{ label: string; value: string; accent?: string }> = []
+  const cells: Cell[] = []
   if (t.model) cells.push({ label: 'model', value: t.model })
-  if (t.tokens != null) cells.push({ label: 'tok', value: formatNumber(t.tokens) })
+
+  const tok = tokenCell(t)
+  if (tok) cells.push(tok)
+
+  if (t.contextSizeTokens != null) {
+    cells.push({
+      label: 'ctx',
+      value: formatTokens(t.contextSizeTokens),
+      aria: `context size ${formatNumber(t.contextSizeTokens)} tokens`,
+    })
+  }
+
+  if (t.cacheReadTokens != null || t.cacheCreationTokens != null) {
+    // Read is the load-bearing figure inline; creation rides the tooltip.
+    const read = t.cacheReadTokens ?? 0
+    const tip = [
+      t.cacheCreationTokens != null ? `cache creation ${formatNumber(t.cacheCreationTokens)} tok` : null,
+      t.cacheReadTokens != null ? `cache read ${formatNumber(t.cacheReadTokens)} tok` : null,
+    ]
+      .filter(Boolean)
+      .join(' · ')
+    cells.push({
+      label: 'cache',
+      value: `${formatTokens(read)} tok`,
+      aria: tip,
+      title: tip,
+    })
+  }
+
   if (t.latencyMs != null) cells.push({ label: 'lat', value: formatLatency(t.latencyMs) })
   if (t.costUsd != null)
     cells.push({ label: 'cost', value: formatMoney(t.costUsd), accent: 'text-status-flight' })
@@ -31,9 +97,14 @@ function Telemetry({ item }: { item: TimelineItem }) {
   return (
     <dl className="mt-1 flex flex-wrap gap-x-4 gap-y-1">
       {cells.map((c) => (
-        <div key={c.label} className="flex items-baseline gap-1">
+        <div key={c.label} className="flex items-baseline gap-1" title={c.title}>
           <dt className="text-[0.55rem] uppercase tracking-wider text-readout-dim">{c.label}</dt>
-          <dd className={`text-xs tabular-nums ${c.accent ?? 'text-readout'}`}>{c.value}</dd>
+          <dd
+            className={`text-xs tabular-nums ${c.accent ?? 'text-readout'}`}
+            aria-label={c.aria}
+          >
+            {c.value}
+          </dd>
         </div>
       ))}
     </dl>

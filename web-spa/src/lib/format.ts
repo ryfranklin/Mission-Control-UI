@@ -29,6 +29,21 @@ export function formatNumber(value: number | null | undefined, digits = 0): stri
 }
 
 /**
+ * A compact token count for the telemetry readout. Small values stay grouped
+ * and exact (`1028` → `1,028`); large ones abbreviate so the figure never
+ * overruns a cell (`58900` → `58.9k`, `1_200_000` → `1.2M`). Non-finite input
+ * renders as `—`. Pair with `tabular-nums` at the call site so digits don't
+ * jitter as the count climbs — matching the cost/clock treatment.
+ */
+export function formatTokens(value: number | null | undefined): string {
+  if (value == null || !Number.isFinite(value)) return '—'
+  const abs = Math.abs(value)
+  if (abs < 10_000) return formatNumber(Math.round(value))
+  if (abs < 1_000_000) return `${(value / 1_000).toFixed(1)}k`
+  return `${(value / 1_000_000).toFixed(1)}M`
+}
+
+/**
  * A mission-elapsed clock: `T+HH:MM:SS`, growing a `Dd ` prefix past 24h.
  * `ms` below zero (clock skew) clamps to zero so the readout never runs
  * backwards.

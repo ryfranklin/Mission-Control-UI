@@ -50,6 +50,11 @@ export function isCostKey(key: string): boolean {
   return /(cost|usd|price|spend|dollar)/i.test(key)
 }
 
+/** True when a metric key names a token quantity (render with the token unit). */
+export function isTokenKey(key: string): boolean {
+  return /(token|(^|[_-])tok([_-]|s?$)|context_size|ctx)/i.test(key)
+}
+
 /**
  * Pull a single value out of a row, preferring keys whose name matches one of
  * `prefer` (case-insensitive substring), else falling back to the last numeric

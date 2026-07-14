@@ -3,11 +3,13 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { seamUrl } from '../../api'
 import {
   accrueCost,
+  accrueTokens,
   deriveRailPhases,
   normalizeFrame,
   type NodePhase,
   type TerminalState,
   type TimelineItem,
+  type TokenTally,
 } from './runModel'
 
 /**
@@ -38,6 +40,8 @@ export interface RunEventsSnapshot {
   railPhases: Record<string, NodePhase>
   /** Accrued per-step cost (pre-terminal, UNRECONCILED). */
   accruedCost: number | null
+  /** Running token tally (actuals — not gated by cost reconciliation). */
+  tokenTally: TokenTally
   /** Settled state once the terminal frame arrives, else null. */
   terminal: TerminalState | null
   connection: FeedConnection
@@ -124,6 +128,7 @@ export function useRunEvents(runId: string, enabled = true): RunEventsSnapshot {
       transitions,
       railPhases: deriveRailPhases(transitions, terminalState),
       accruedCost: accrueCost(items),
+      tokenTally: accrueTokens(items),
       terminal: terminalState,
       connection,
     }
