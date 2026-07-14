@@ -42,7 +42,7 @@ const LINE_STYLE: Record<DiffLineKind, { text: string; gutter: string; row: stri
   remove: { text: 'text-status-fault', gutter: '−', row: 'bg-status-fault/[0.07]' },
   hunk: { text: 'text-status-telemetry', gutter: '@', row: 'bg-status-telemetry/[0.06]' },
   meta: { text: 'text-readout-dim', gutter: '\\', row: '' },
-  context: { text: 'text-readout-muted', gutter: ' ', row: '' },
+  context: { text: 'text-readout', gutter: ' ', row: '' },
 }
 
 // Cap rendered lines per file so one giant hunk can't blow up the DOM.
