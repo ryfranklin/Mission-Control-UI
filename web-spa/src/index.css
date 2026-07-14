@@ -1,0 +1,33 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    color-scheme: dark;
+  }
+
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    @apply bg-console-void text-readout font-mono antialiased;
+    /* Tabular, lining figures everywhere by default — telemetry columns align. */
+    font-variant-numeric: tabular-nums lining-nums;
+  }
+}
+
+@layer components {
+  /* A console panel: near-black surface with a hairline bezel. */
+  .mc-panel {
+    @apply rounded-md border border-console-line bg-console-panel shadow-panel;
+  }
+
+  /* Status pill — semantic accent on a dim wash. */
+  .mc-status {
+    @apply inline-flex items-center gap-1.5 rounded px-2 py-0.5 text-xs uppercase tracking-wider;
+  }
+}
