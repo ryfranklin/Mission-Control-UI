@@ -34,7 +34,7 @@ requirements:
   value: openapi-typescript run against live /openapi.json (not templates) for typed
     client
 schema: 1
-status: ready
+status: finalized
 units:
 - depends_on: []
   phase: INCEPTION
