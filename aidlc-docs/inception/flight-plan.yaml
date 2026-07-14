@@ -96,3 +96,9 @@ units:
   status: pending
   task_type: sim
   title: Workflow Planning
+- depends_on: []
+  phase: INCEPTION
+  seq: 9
+  status: pending
+  task_type: sim
+  title: User Stories
