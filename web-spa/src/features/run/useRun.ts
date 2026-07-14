@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
 import {
+  ApiError,
   approveRun,
   cancelRun,
   getRun,
@@ -36,9 +37,11 @@ export function useRun(runId: string, enabled = true) {
 }
 
 /**
- * `GET /runs/{id}/changes` — the go/no-go change set (files + counts) shown at
- * the gate. Only fetched when the run is awaiting the gate, since it is
- * meaningless before the diff exists.
+ * `GET /runs/{id}/changes` — the go/no-go change set (files, counts, and the
+ * unified diff). Fetched both while the run is parked at the gate (the live
+ * decision material) and once it has landed (the seam persists the applied
+ * diff). A 404 ("no pending changes" — sim / no-change / pre-feature run) is an
+ * expected empty state, so we don't retry it.
  */
 export function useRunChanges(runId: string, enabled: boolean) {
   return useQuery<RunChanges>({
@@ -46,6 +49,11 @@ export function useRunChanges(runId: string, enabled: boolean) {
     queryFn: ({ signal }) => getRunChanges(runId, { signal }),
     enabled: enabled && !!runId,
     staleTime: 5_000,
+    retry: (failureCount, err) => {
+      // A 404 is a legitimate "no change set" — surface it immediately.
+      if (err instanceof ApiError && err.status === 404) return false
+      return failureCount < 2
+    },
   })
 }
 

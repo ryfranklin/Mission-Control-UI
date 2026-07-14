@@ -91,6 +91,24 @@ export function formatLatency(ms: number | null | undefined): string {
   return `${(ms / 1000).toFixed(2)}s`
 }
 
+/**
+ * A compact elapsed DURATION (not a mission clock): `820ms`, `3.2s`, `4m 05s`,
+ * `1h 02m`. Distinct from {@link formatLatency} (sub-second oriented) and
+ * {@link formatElapsed} (the `T+HH:MM:SS` hero clock) — this is the short
+ * per-node timing shown inline on the sequence rail. Non-finite input → `—`.
+ */
+export function formatDuration(ms: number | null | undefined): string {
+  if (ms == null || !Number.isFinite(ms) || ms < 0) return '—'
+  if (ms < 1000) return `${Math.round(ms)}ms`
+  const totalSec = Math.round(ms / 1000)
+  if (totalSec < 60) return `${(ms / 1000).toFixed(1)}s`
+  const minutes = Math.floor(totalSec / 60)
+  const seconds = totalSec % 60
+  if (minutes < 60) return `${minutes}m ${String(seconds).padStart(2, '0')}s`
+  const hours = Math.floor(minutes / 60)
+  return `${hours}h ${String(minutes % 60).padStart(2, '0')}m`
+}
+
 /** Turn a snake_case metric key into a Title Case label. */
 export function humanizeKey(key: string): string {
   return key
