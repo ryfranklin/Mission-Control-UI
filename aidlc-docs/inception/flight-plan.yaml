@@ -93,7 +93,7 @@ units:
 - depends_on: []
   phase: INCEPTION
   seq: 8
-  status: pending
+  status: done
   task_type: sim
   title: Workflow Planning
 - depends_on: []
