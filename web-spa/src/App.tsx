@@ -22,9 +22,25 @@ const RunStationView = lazy(() =>
   import('./features/run/RunStationView').then((m) => ({ default: m.RunStationView })),
 )
 
+// The Planner console (plan list/create) and its streaming session hero are
+// lazy-loaded — the SSE-over-fetch streaming machinery only arrives when an
+// operator opens the Planner.
+const PlannerView = lazy(() =>
+  import('./features/planner/PlannerView').then((m) => ({ default: m.PlannerView })),
+)
+const PlanConsoleView = lazy(() =>
+  import('./features/planner/PlanConsoleView').then((m) => ({ default: m.PlanConsoleView })),
+)
+
 /** Match the nested run-station route `#/runs/{id}` off the shared hash router. */
 function matchRun(path: string): string | null {
   const m = /^runs\/(.+)$/.exec(path)
+  return m ? decodeURIComponent(m[1]) : null
+}
+
+/** Match the nested plan-console route `#/plans/{id}` off the shared hash router. */
+function matchPlan(path: string): string | null {
+  const m = /^plans\/(.+)$/.exec(path)
   return m ? decodeURIComponent(m[1]) : null
 }
 
@@ -36,18 +52,24 @@ function PanelFallback({ label }: { label: string }) {
   )
 }
 
-const VIEWS = ['fleet', 'metrics'] as const
+const VIEWS = ['fleet', 'metrics', 'planner'] as const
 type View = (typeof VIEWS)[number]
 
 const NAV: Array<{ key: View; label: string; caption: string }> = [
   { key: 'fleet', label: 'Fleet', caption: 'Flight Director board' },
   { key: 'metrics', label: 'Metrics', caption: 'Controller rollups' },
+  { key: 'planner', label: 'Planner', caption: 'Inception · Flight Plans' },
 ]
 
 export default function App() {
   const [view, navigate] = useHashRoute<View>(VIEWS, 'fleet')
   const path = useHashPath()
   const runId = matchRun(path)
+  const planId = matchPlan(path)
+
+  // The active nav key: no view is active while drilled into a run station; the
+  // Planner tab stays lit while inside a plan console.
+  const activeKey: View | null = runId ? null : planId ? 'planner' : view
 
   return (
     <div className="min-h-full bg-console-void text-readout">
@@ -63,7 +85,7 @@ export default function App() {
 
           <nav aria-label="Views" className="flex items-center gap-1">
             {NAV.map((item) => {
-              const active = !runId && item.key === view
+              const active = item.key === activeKey
               return (
                 <button
                   key={item.key}
@@ -105,11 +127,19 @@ export default function App() {
           <Suspense fallback={<PanelFallback label="Opening run station…" />}>
             <RunStationView runId={runId} onExit={() => navigate('fleet')} />
           </Suspense>
+        ) : planId ? (
+          <Suspense fallback={<PanelFallback label="Opening plan console…" />}>
+            <PlanConsoleView planId={planId} onExit={() => navigate('planner')} />
+          </Suspense>
         ) : view === 'fleet' ? (
           <FleetView />
-        ) : (
+        ) : view === 'metrics' ? (
           <Suspense fallback={<PanelFallback label="Loading metrics…" />}>
             <MetricsView />
+          </Suspense>
+        ) : (
+          <Suspense fallback={<PanelFallback label="Loading planner…" />}>
+            <PlannerView onOpen={(id) => navigate(`plans/${encodeURIComponent(id)}` as View)} />
           </Suspense>
         )}
       </main>
