@@ -34,7 +34,7 @@ requirements:
   value: openapi-typescript run against live /openapi.json (not templates) for typed
     client
 schema: 1
-status: drafting
+status: ready
 units:
 - depends_on: []
   phase: INCEPTION
@@ -102,3 +102,9 @@ units:
   status: pending
   task_type: sim
   title: User Stories
+- depends_on: []
+  phase: INCEPTION
+  seq: 10
+  status: pending
+  task_type: sim
+  title: Units Generation
