@@ -105,6 +105,6 @@ units:
 - depends_on: []
   phase: INCEPTION
   seq: 10
-  status: pending
+  status: done
   task_type: sim
   title: Units Generation
