@@ -21,6 +21,9 @@ const TERMINAL = new Set([
   'complete',
   'done',
   'finished',
+  // A burn lands in `applied` / `pushed` — these ARE terminal (cost reconciled).
+  'applied',
+  'pushed',
   'failed',
   'failure',
   'error',
@@ -36,7 +39,7 @@ const TERMINAL = new Set([
   'nogo',
 ])
 
-/** Statuses that resolved cleanly — GO / green. */
+/** Statuses that resolved cleanly — GO / green. Reconciled / settled figures. */
 const GO = new Set([
   'succeeded',
   'success',
@@ -47,6 +50,9 @@ const GO = new Set([
   'approved',
   'go',
   'reconciled',
+  // A landed burn settles green — its cost is the reconciled figure.
+  'applied',
+  'pushed',
 ])
 
 /** Statuses that resolved as a fault / NO-GO — red. */

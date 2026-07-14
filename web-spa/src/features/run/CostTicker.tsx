@@ -1,4 +1,5 @@
 import { formatNumber, formatTokens } from '../../lib/format'
+import { isTerminal } from '../../lib/status'
 import { CostReadout } from '../fleet/CostReadout'
 import type { TerminalState, TokenTally } from './runModel'
 
@@ -18,18 +19,27 @@ export function CostTicker({
   tokenTally,
   terminal,
   liveStatus,
+  reconciledCost,
 }: {
   accruedCost: number | null
   tokenTally: TokenTally
   terminal: TerminalState | null
-  /** The run's current (non-terminal) status, for the in-flight readout. */
+  /** The run's current status — settled or in-flight — for the readout. */
   liveStatus: string | null | undefined
+  /** The run's persisted `cost_usd`, the reconciled figure for a landed burn. */
+  reconciledCost: number | null | undefined
 }) {
-  const settled = terminal != null
-  const costUsd = settled ? terminal.costUsd : accruedCost
-  // CostReadout keys the amber/green decision off isTerminal(status): pass the
-  // settled status only when terminal, else force the in-flight branch.
-  const status = settled ? terminal.status : liveStatus ?? 'in_flight'
+  // A burn settles either via the SSE terminal frame OR because its status is
+  // already terminal (e.g. a landed `applied` run whose stream carried no
+  // terminal frame). Cost-honesty is preserved: a genuinely in-flight run
+  // (running/queued/awaiting_gate) is not terminal, so it stays UNRECONCILED.
+  const settled = terminal != null || isTerminal(liveStatus)
+  // Prefer the terminal frame's reconciled cost, else the run's persisted
+  // cost_usd; only fall back to the accrued (provisional) figure in flight.
+  const costUsd = settled ? terminal?.costUsd ?? reconciledCost ?? null : accruedCost
+  // CostReadout keys the amber/green decision off isTerminal(status): pass a
+  // settled status when settled, else force the in-flight branch.
+  const status = settled ? terminal?.status ?? liveStatus ?? 'settled' : liveStatus ?? 'in_flight'
 
   return (
     <section aria-label="Cost ticker" className="mc-panel p-4">
