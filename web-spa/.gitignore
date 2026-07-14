@@ -13,8 +13,9 @@ dist/
 *.log
 .DS_Store
 
-# generated API types (produced by `npm run gen:api` against the live seam)
-src/api/schema.d.ts
+# Generated API types (`npm run gen:api`) are COMMITTED at src/api/schema.ts,
+# so the typed client builds without a live seam. Regenerate against the live
+# seam when the OpenAPI contract changes; do not hand-edit schema.ts.
 
 # vite / tsc caches
 .vite/
