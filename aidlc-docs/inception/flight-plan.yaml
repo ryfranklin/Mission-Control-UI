@@ -1,0 +1,11 @@
+mode: greenfield
+requirements: []
+schema: 1
+status: drafting
+units:
+- depends_on: []
+  phase: INCEPTION
+  seq: 0
+  status: pending
+  task_type: sim
+  title: Workspace Detection
