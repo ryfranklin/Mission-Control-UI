@@ -40,6 +40,9 @@ export type PlanDetail = Schemas['PlanDetail']
 export type TurnRequest = Schemas['TurnRequest']
 export type TurnResponse = Schemas['TurnResponse']
 export type TurnModel = Schemas['TurnModel']
+export type RequirementModel = Schemas['RequirementModel']
+export type UnitModel = Schemas['UnitModel']
+export type CriterionModel = Schemas['CriterionModel']
 export type HTTPValidationError = Schemas['HTTPValidationError']
 
 /** Query params for the paged/sorted/time-filtered list endpoints. */
