@@ -77,6 +77,7 @@ export function RunStationView({ runId, onExit }: { runId: string; onExit: () =>
               <div className="flex flex-col gap-4">
                 <CostTicker
                   accruedCost={feed.accruedCost}
+                  tokenTally={feed.tokenTally}
                   terminal={terminal}
                   liveStatus={run.status}
                 />

@@ -74,7 +74,15 @@ const RAIL_INDEX: Record<string, number> = Object.fromEntries(RAIL_NODES.map((n,
 // ---------------------------------------------------------------------------
 
 export interface StepTelemetry {
+  /** Total tokens when the frame reports one outright. */
   tokens: number | null
+  /** Per-step token breakdown (Anthropic usage vocabulary). */
+  inputTokens: number | null
+  outputTokens: number | null
+  cacheCreationTokens: number | null
+  cacheReadTokens: number | null
+  /** Working context window size at this step, in tokens. */
+  contextSizeTokens: number | null
   costUsd: number | null
   latencyMs: number | null
   model: string | null
@@ -214,11 +222,46 @@ const SCRUB_TERMINAL = new Set(['scrubbed', 'rejected', 'no_go', 'nogo', 'cancel
 function extractTelemetry(rec: Record<string, unknown>): StepTelemetry | null {
   const t = asRecord(rec.telemetry) ?? asRecord(rec.metrics) ?? asRecord(rec.usage) ?? rec
   const tokens = firstNumber(t, ['tokens', 'total_tokens', 'token_count', 'tok'])
+  const inputTokens = firstNumber(t, ['input_tokens', 'prompt_tokens', 'tokens_in'])
+  const outputTokens = firstNumber(t, ['output_tokens', 'completion_tokens', 'tokens_out'])
+  const cacheCreationTokens = firstNumber(t, [
+    'cache_creation_tokens',
+    'cache_creation_input_tokens',
+    'cache_write_tokens',
+  ])
+  const cacheReadTokens = firstNumber(t, [
+    'cache_read_tokens',
+    'cache_read_input_tokens',
+    'cached_tokens',
+  ])
+  const contextSizeTokens = firstNumber(t, ['context_size_tokens', 'context_size', 'context_tokens'])
   const costUsd = firstNumber(t, ['cost_usd', 'cost', 'usd', 'price_usd'])
   const latencyMs = firstNumber(t, ['latency_ms', 'latency', 'elapsed_ms', 'duration_ms'])
   const model = firstString(t, ['model', 'model_id', 'engine'])
-  if (tokens == null && costUsd == null && latencyMs == null && model == null) return null
-  return { tokens, costUsd, latencyMs, model }
+  if (
+    tokens == null &&
+    inputTokens == null &&
+    outputTokens == null &&
+    cacheCreationTokens == null &&
+    cacheReadTokens == null &&
+    contextSizeTokens == null &&
+    costUsd == null &&
+    latencyMs == null &&
+    model == null
+  ) {
+    return null
+  }
+  return {
+    tokens,
+    inputTokens,
+    outputTokens,
+    cacheCreationTokens,
+    cacheReadTokens,
+    contextSizeTokens,
+    costUsd,
+    latencyMs,
+    model,
+  }
 }
 
 /**
@@ -370,6 +413,46 @@ export function accrueCost(items: TimelineItem[]): number | null {
     }
   }
   return seen ? sum : null
+}
+
+/**
+ * A running token tally across the run's telemetry frames. Unlike cost these
+ * are ACTUALS — the sum of input + output tokens observed so far, plus the most
+ * recent context-window size — so they render plainly (not gated by cost
+ * reconciliation). `seen` is false until at least one token figure lands, so
+ * callers can distinguish "no tokens yet" from a genuine zero.
+ */
+export interface TokenTally {
+  inputTokens: number
+  outputTokens: number
+  totalTokens: number
+  latestContextSize: number | null
+  seen: boolean
+}
+
+export function accrueTokens(items: TimelineItem[]): TokenTally {
+  let inputTokens = 0
+  let outputTokens = 0
+  let latestContextSize: number | null = null
+  let seen = false
+  // `items` arrive in seq order, so the last context size we see is the latest.
+  for (const it of items) {
+    const t = it.telemetry
+    if (!t) continue
+    if (t.inputTokens != null) {
+      inputTokens += t.inputTokens
+      seen = true
+    }
+    if (t.outputTokens != null) {
+      outputTokens += t.outputTokens
+      seen = true
+    }
+    if (t.contextSizeTokens != null) {
+      latestContextSize = t.contextSizeTokens
+      seen = true
+    }
+  }
+  return { inputTokens, outputTokens, totalTokens: inputTokens + outputTokens, latestContextSize, seen }
 }
 
 // ---------------------------------------------------------------------------

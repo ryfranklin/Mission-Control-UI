@@ -1,5 +1,6 @@
+import { formatNumber, formatTokens } from '../../lib/format'
 import { CostReadout } from '../fleet/CostReadout'
-import type { TerminalState } from './runModel'
+import type { TerminalState, TokenTally } from './runModel'
 
 /**
  * LIVE COST TICKER — accrues from per-step telemetry while the run is in flight
@@ -14,10 +15,12 @@ import type { TerminalState } from './runModel'
  */
 export function CostTicker({
   accruedCost,
+  tokenTally,
   terminal,
   liveStatus,
 }: {
   accruedCost: number | null
+  tokenTally: TokenTally
   terminal: TerminalState | null
   /** The run's current (non-terminal) status, for the in-flight readout. */
   liveStatus: string | null | undefined
@@ -44,6 +47,54 @@ export function CostTicker({
           Provisional — settles at terminal
         </p>
       )}
+      <TokenTallyReadout tally={tokenTally} />
     </section>
+  )
+}
+
+/**
+ * TOKEN TALLY — actual input + output tokens observed, plus the latest context
+ * size. These are ACTUALS, not an estimate, so unlike cost they are NOT gated
+ * by reconciliation: they render plainly whether the run is in flight or
+ * settled. Cyan is the console's live-telemetry accent; labels/aria carry the
+ * meaning so the figure never rides color alone.
+ */
+function TokenTallyReadout({ tally }: { tally: TokenTally }) {
+  return (
+    <dl
+      aria-label="Token usage"
+      className="mt-3 flex flex-wrap gap-x-5 gap-y-1 border-t border-console-line pt-2"
+    >
+      <div className="flex items-baseline gap-1.5">
+        <dt className="text-[0.55rem] uppercase tracking-wider text-readout-dim">tokens</dt>
+        <dd
+          className="text-sm tabular-nums text-status-telemetry"
+          aria-label={
+            tally.seen
+              ? `${formatNumber(tally.inputTokens)} input plus ${formatNumber(
+                  tally.outputTokens,
+                )} output tokens`
+              : 'No token usage yet'
+          }
+        >
+          {tally.seen
+            ? `in ${formatTokens(tally.inputTokens)} / out ${formatTokens(tally.outputTokens)}`
+            : '—'}
+        </dd>
+      </div>
+      <div className="flex items-baseline gap-1.5">
+        <dt className="text-[0.55rem] uppercase tracking-wider text-readout-dim">ctx</dt>
+        <dd
+          className="text-sm tabular-nums text-readout"
+          aria-label={
+            tally.latestContextSize != null
+              ? `context size ${formatNumber(tally.latestContextSize)} tokens`
+              : 'Context size not reported'
+          }
+        >
+          {formatTokens(tally.latestContextSize)}
+        </dd>
+      </div>
+    </dl>
   )
 }
