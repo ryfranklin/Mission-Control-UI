@@ -1,10 +1,13 @@
 import { Fragment } from 'react'
 
+import { formatDuration } from '../../lib/format'
 import {
   PHASE_GLYPH,
   PHASE_LABEL,
   RAIL_NODES,
   SCRUB_NODE,
+  type BurnSummary,
+  type NodeAnnotation,
   type NodePhase,
 } from './runModel'
 
@@ -13,6 +16,11 @@ import {
  * illuminate as SSE frames arrive: pending (dim), active (cyan, pulsing LED),
  * done (green), fault (red). The off-nominal `scrub` node hangs below the
  * nominal chain and only lights when the run takes the abort path.
+ *
+ * Each node is annotated with its derived OUTCOME (dispatch → worktree branch,
+ * gate → GO/NO-GO, apply_burn → push status, teardown → outcome), the seam's
+ * latest note, and the elapsed time spent in the node. A compact BURN SUMMARY
+ * strip distils branch · decision · push status.
  *
  * Accessibility: every node pairs its accent color with a phase glyph and a
  * text phase label, so state never rides on hue alone.
@@ -56,10 +64,12 @@ function RailNode({
   label,
   hint,
   phase,
+  annotation,
 }: {
   label: string
   hint: string
   phase: NodePhase
+  annotation?: NodeAnnotation
 }) {
   const s = PHASE_STYLE[phase]
   return (
@@ -84,6 +94,27 @@ function RailNode({
         <span aria-hidden>{PHASE_GLYPH[phase]}</span>
         {PHASE_LABEL[phase]}
       </span>
+      {annotation?.outcome && (
+        <span
+          className={`max-w-full truncate rounded border border-console-line px-1 py-0.5 text-[0.55rem] font-semibold uppercase tracking-wider ${s.label}`}
+          title={annotation.note ?? annotation.outcome}
+        >
+          {annotation.outcome}
+        </span>
+      )}
+      {annotation?.elapsedMs != null && (
+        <span className="text-[0.55rem] tabular-nums text-readout-dim" title="Elapsed in node">
+          {formatDuration(annotation.elapsedMs)}
+        </span>
+      )}
+      {annotation?.note && (
+        <span
+          className="line-clamp-2 max-w-full text-[0.55rem] leading-tight text-readout-muted"
+          title={annotation.note}
+        >
+          {annotation.note}
+        </span>
+      )}
     </li>
   )
 }
@@ -97,7 +128,55 @@ function Connector({ done }: { done: boolean }) {
   )
 }
 
-export function SequenceRail({ phases }: { phases: Record<string, NodePhase> }) {
+/** BURN SUMMARY — branch · decision · push status, distilled to one strip. */
+function BurnSummaryStrip({ summary }: { summary: BurnSummary }) {
+  const decisionTone =
+    summary.decision === 'GO'
+      ? 'text-status-go'
+      : summary.decision === 'NO-GO'
+        ? 'text-status-fault'
+        : 'text-readout-muted'
+  const pushTone =
+    summary.push === 'PUSHED'
+      ? 'text-status-go'
+      : summary.push === 'REJECTED' || summary.push === 'NO-GO'
+        ? 'text-status-fault'
+        : summary.push === 'SKIPPED'
+          ? 'text-status-flight'
+          : 'text-readout-muted'
+
+  return (
+    <dl className="mt-3 flex flex-wrap items-baseline gap-x-5 gap-y-1 border-t border-console-line pt-3 text-[0.6rem]">
+      <span className="uppercase tracking-widest text-readout-dim">Burn Summary</span>
+      <div className="flex items-baseline gap-1.5">
+        <dt className="uppercase tracking-wider text-readout-muted">Branch</dt>
+        <dd className="max-w-[16rem] truncate font-mono text-readout" title={summary.branch ?? undefined}>
+          {summary.branch ?? '—'}
+        </dd>
+      </div>
+      <div className="flex items-baseline gap-1.5">
+        <dt className="uppercase tracking-wider text-readout-muted">Decision</dt>
+        <dd className={`font-semibold uppercase tracking-wider ${decisionTone}`}>
+          {summary.decision ?? '—'}
+        </dd>
+      </div>
+      <div className="flex items-baseline gap-1.5">
+        <dt className="uppercase tracking-wider text-readout-muted">Push</dt>
+        <dd className={`font-semibold uppercase tracking-wider ${pushTone}`}>{summary.push ?? '—'}</dd>
+      </div>
+    </dl>
+  )
+}
+
+export function SequenceRail({
+  phases,
+  annotations,
+  summary,
+}: {
+  phases: Record<string, NodePhase>
+  annotations?: Record<string, NodeAnnotation>
+  summary?: BurnSummary
+}) {
   const scrubPhase = phases[SCRUB_NODE.id] ?? 'pending'
   const scrubEngaged = scrubPhase !== 'pending'
 
@@ -117,7 +196,7 @@ export function SequenceRail({ phases }: { phases: Record<string, NodePhase> }) 
           const phase = phases[n.id] ?? 'pending'
           return (
             <Fragment key={n.id}>
-              <RailNode label={n.label} hint={n.hint} phase={phase} />
+              <RailNode label={n.label} hint={n.hint} phase={phase} annotation={annotations?.[n.id]} />
               {i < RAIL_NODES.length - 1 && <Connector done={phase === 'done'} />}
             </Fragment>
           )
@@ -129,9 +208,16 @@ export function SequenceRail({ phases }: { phases: Record<string, NodePhase> }) 
           Off-nominal
         </span>
         <div className={scrubEngaged ? '' : 'opacity-50'}>
-          <RailNode label={SCRUB_NODE.label} hint={SCRUB_NODE.hint} phase={scrubPhase} />
+          <RailNode
+            label={SCRUB_NODE.label}
+            hint={SCRUB_NODE.hint}
+            phase={scrubPhase}
+            annotation={annotations?.[SCRUB_NODE.id]}
+          />
         </div>
       </div>
+
+      {summary?.hasAny && <BurnSummaryStrip summary={summary} />}
     </section>
   )
 }

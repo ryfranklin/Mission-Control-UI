@@ -1,4 +1,5 @@
 import type { RunDetail } from '../../api'
+import { Markdown } from '../../components/Markdown'
 import { StatusBadge } from '../../components/StatusBadge'
 import { formatElapsed, formatTimestamp, parseTimestamp } from '../../lib/format'
 import { statusPresentation, taskTypeLabel } from '../../lib/status'
@@ -86,9 +87,12 @@ export function RunDetailHeader({
       </div>
 
       {run.detail && (
-        <p className="mt-3 border-t border-console-line pt-3 text-xs text-readout-muted">
-          {run.detail}
-        </p>
+        <div className="mt-3 border-t border-console-line pt-3">
+          <p className="mb-1.5 text-[0.55rem] uppercase tracking-wider text-readout-muted">
+            Report
+          </p>
+          <Markdown>{run.detail}</Markdown>
+        </div>
       )}
     </section>
   )

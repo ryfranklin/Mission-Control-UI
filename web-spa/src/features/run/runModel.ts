@@ -495,6 +495,164 @@ export function accrueTokens(items: TimelineItem[]): TokenTally {
 }
 
 // ---------------------------------------------------------------------------
+// Per-node outcome annotations — the burn detail lit onto the sequence rail.
+// ---------------------------------------------------------------------------
+
+/**
+ * A rail node's derived outcome, read from the `node_transition` frames that
+ * touched it: a short outcome token (GO / NO-GO / PUSHED / a branch name…), the
+ * latest free-form note the seam sent, and the elapsed time spent in the node
+ * where the frame timestamps let us derive it. Honest by construction — the
+ * note is always the raw detail; the token only summarises what was observed.
+ */
+export interface NodeAnnotation {
+  outcome: string | null
+  note: string | null
+  elapsedMs: number | null
+}
+
+/** A branch/worktree ref from a free-form detail line, best-effort. */
+function extractBranch(text: string): string | null {
+  // Conventional branch shapes first (`burn-…`, `feat/…`) — the real ref name,
+  // even when it trails a keyword like "worktree branch".
+  const conv = text.match(/\b((?:burn|run|feat|feature|fix|chore|hotfix|release)[-/][\w./-]+)/i)
+  if (conv) return conv[1]
+  // Otherwise the token following a branch/worktree/ref keyword, if it looks
+  // like a ref (not just another prose word we don't recognise).
+  const kw = text.match(/\b(?:branch|worktree|ref)\s+(?:is\s+|named\s+|=\s*)?["'`]?([\w][\w./-]+)["'`]?/i)
+  if (kw && kw[1].toLowerCase() !== 'branch') return kw[1]
+  const ticked = text.match(/`([\w][\w./-]{2,})`/)
+  if (ticked) return ticked[1]
+  return null
+}
+
+/** A push disposition (apply_burn) from a free-form detail line. */
+function extractPush(text: string): string | null {
+  const t = text.toLowerCase()
+  if (/\breject/.test(t)) return 'REJECTED'
+  if (/\bskip/.test(t)) return 'SKIPPED'
+  if (/\bpush(ed|ing)?\b/.test(t)) return 'PUSHED'
+  if (/\bno[\s-]?go\b/.test(t)) return 'NO-GO'
+  return null
+}
+
+function firstAt(items: TimelineItem[]): number | null {
+  let min: number | null = null
+  for (const it of items) if (it.at != null && (min == null || it.at < min)) min = it.at
+  return min
+}
+
+function lastAt(items: TimelineItem[]): number | null {
+  let max: number | null = null
+  for (const it of items) if (it.at != null && (max == null || it.at > max)) max = it.at
+  return max
+}
+
+function latestNote(items: TimelineItem[]): string | null {
+  for (let i = items.length - 1; i >= 0; i--) if (items[i].detail) return items[i].detail
+  return null
+}
+
+/** A short uppercase outcome from a node's phase, when nothing more specific fits. */
+function phaseOutcome(phase: NodePhase | undefined): string | null {
+  if (phase === 'done') return 'DONE'
+  if (phase === 'fault') return 'FAULT'
+  if (phase === 'active') return 'ACTIVE'
+  return null
+}
+
+/**
+ * Derive each rail node's outcome annotation from the ordered transitions.
+ * Semantics per node follow the flight sequence: dispatch → worktree branch,
+ * gate → GO / NO-GO, apply_burn → push disposition, teardown → outcome.
+ * Elapsed is derived from frame timestamps: a node's start to the next node's
+ * start (or its own last frame), only when the timestamps support it.
+ */
+export function deriveNodeAnnotations(
+  transitions: TimelineItem[],
+  railPhases: Record<string, NodePhase>,
+): Record<string, NodeAnnotation> {
+  const nodeTransitions = transitions.filter((t) => t.kind === 'node_transition' && t.node)
+  const byNode: Record<string, TimelineItem[]> = {}
+  for (const t of nodeTransitions) (byNode[t.node as string] ??= []).push(t)
+
+  // Ordered starts, so per-node elapsed can span to the next node's first frame.
+  const orderedStarts = RAIL_NODES.map((n) => firstAt(byNode[n.id] ?? [])).map((v) => v)
+
+  const out: Record<string, NodeAnnotation> = {}
+  for (const n of ALL_NODES) {
+    const items = byNode[n.id] ?? []
+    const phase = railPhases[n.id]
+    const note = latestNote(items)
+    const noteText = items.map((it) => it.detail ?? '').join(' — ')
+
+    let outcome: string | null = null
+    if (n.id === 'gate') {
+      if (phase === 'done') outcome = 'GO'
+      else if (phase === 'fault') outcome = 'NO-GO'
+      else if (noteText) outcome = extractPush(noteText) === 'NO-GO' ? 'NO-GO' : null
+    } else if (n.id === 'apply_burn') {
+      outcome = extractPush(noteText) ?? phaseOutcome(phase)
+    } else if (n.id === 'dispatch') {
+      outcome = extractBranch(noteText)
+    } else {
+      outcome = phaseOutcome(phase)
+    }
+
+    // Elapsed: this node's start → next node's start, else its own span.
+    let elapsedMs: number | null = null
+    const railIdx = RAIL_INDEX[n.id]
+    const start = firstAt(items)
+    if (start != null) {
+      let nextStart: number | null = null
+      if (railIdx != null) {
+        for (let j = railIdx + 1; j < orderedStarts.length; j++) {
+          const s = orderedStarts[j]
+          if (s != null && s >= start) {
+            nextStart = s
+            break
+          }
+        }
+      }
+      const end = nextStart ?? lastAt(items)
+      if (end != null && end > start) elapsedMs = end - start
+    }
+
+    out[n.id] = { outcome, note, elapsedMs }
+  }
+  return out
+}
+
+/** A compact one-line burn summary: branch · decision · push status. */
+export interface BurnSummary {
+  branch: string | null
+  decision: 'GO' | 'NO-GO' | null
+  push: string | null
+  hasAny: boolean
+}
+
+export function deriveBurnSummary(
+  annotations: Record<string, NodeAnnotation>,
+  transitions: TimelineItem[],
+): BurnSummary {
+  const allText = transitions
+    .filter((t) => t.kind === 'node_transition')
+    .map((t) => t.detail ?? '')
+    .join(' — ')
+
+  const branch = annotations.dispatch?.outcome ?? extractBranch(allText)
+  const gate = annotations.gate?.outcome
+  const decision: BurnSummary['decision'] = gate === 'GO' || gate === 'NO-GO' ? gate : null
+  const push = annotations.apply_burn?.outcome ?? null
+  return {
+    branch,
+    decision,
+    push,
+    hasAny: branch != null || decision != null || push != null,
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Gate-awaiting detection.
 // ---------------------------------------------------------------------------
 

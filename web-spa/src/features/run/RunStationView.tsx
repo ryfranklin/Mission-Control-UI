@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useMemo } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 
 import { QueryState } from '../../components/QueryState'
@@ -8,7 +8,7 @@ import { GateDiff } from './GateDiff'
 import { GatePanel } from './GatePanel'
 import { LiveTimeline } from './LiveTimeline'
 import { RunDetailHeader } from './RunDetailHeader'
-import { isAwaitingGate } from './runModel'
+import { deriveBurnSummary, deriveNodeAnnotations, isAwaitingGate } from './runModel'
 import { SequenceRail } from './SequenceRail'
 import { runKey, useRun, useRunActions, useRunChanges } from './useRun'
 import { useRunEvents } from './useRunEvents'
@@ -44,7 +44,31 @@ export function RunStationView({ runId, onExit }: { runId: string; onExit: () =>
   const inFlight = !!run && !detailTerminal && terminal == null
   const live = feed.connection === 'open' || feed.connection === 'connecting'
 
-  const changesQuery = useRunChanges(runId, awaitingGate)
+  // Per-node outcome annotations + the compact burn summary, both derived from
+  // the same event feed that lights the rail (no extra I/O).
+  const annotations = useMemo(
+    () => deriveNodeAnnotations(feed.transitions, feed.railPhases),
+    [feed.transitions, feed.railPhases],
+  )
+  const burnSummary = useMemo(
+    () => deriveBurnSummary(annotations, feed.transitions),
+    [annotations, feed.transitions],
+  )
+
+  // Fetch the change set both at the gate (live decision material) and once a
+  // burn has landed (the seam persists the applied diff). Skip settled sims —
+  // they have no diff, so we avoid a needless 404.
+  const isSim = run?.task_type?.trim().toLowerCase() === 'sim'
+  const changesEnabled = awaitingGate || (detailTerminal && !isSim)
+  const changesQuery = useRunChanges(runId, changesEnabled)
+
+  // Show the panel at the gate always; post-landing only when a diff exists.
+  const hasChangeData =
+    !!changesQuery.data &&
+    (Array.isArray(changesQuery.data)
+      ? changesQuery.data.length > 0
+      : Object.keys(changesQuery.data).length > 0)
+  const showGateDiff = awaitingGate || (detailTerminal && hasChangeData)
 
   return (
     <section aria-label="Run station" className="flex flex-col gap-4">
@@ -69,7 +93,11 @@ export function RunStationView({ runId, onExit }: { runId: string; onExit: () =>
         {run && (
           <>
             <RunDetailHeader run={run} connection={feed.connection} />
-            <SequenceRail phases={feed.railPhases} />
+            <SequenceRail
+              phases={feed.railPhases}
+              annotations={annotations}
+              summary={burnSummary}
+            />
 
             <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1.6fr_1fr]">
               <LiveTimeline transitions={feed.transitions} live={live && !terminal} />
@@ -82,11 +110,12 @@ export function RunStationView({ runId, onExit }: { runId: string; onExit: () =>
                   liveStatus={run.status}
                 />
                 <GatePanel awaitingGate={awaitingGate} inFlight={inFlight} actions={actions} />
-                {awaitingGate && (
+                {showGateDiff && (
                   <GateDiff
                     changes={changesQuery.data}
                     isLoading={changesQuery.isLoading}
                     error={changesQuery.error}
+                    atGate={awaitingGate}
                   />
                 )}
               </div>
