@@ -19,8 +19,11 @@ const PAGE_SIZE = 20
 export function PlannerView({ onOpen }: { onOpen: (planId: string) => void }) {
   const [offset, setOffset] = useState(0)
 
+  // The seam's `order` is a sort DIRECTION (`asc`|`desc`), not a UI label; its
+  // default (`desc`) is already newest-first, i.e. "recent". Sending `recent`
+  // 422s, so we ask for `desc` explicitly.
   const query: ListPlansQuery = useMemo(
-    () => ({ limit: PAGE_SIZE, offset, order: 'recent' }),
+    () => ({ limit: PAGE_SIZE, offset, order: 'desc' }),
     [offset],
   )
 
