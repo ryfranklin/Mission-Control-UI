@@ -9,8 +9,9 @@ import { StatusBadge } from '../../components/StatusBadge'
 import { CostReadout } from '../fleet/CostReadout'
 import { formatMoney } from '../../lib/format'
 import { taskTypeLabel } from '../../lib/status'
-import { dependsLabel, requirementState, type StatePresentation } from './planModel'
+import { buildUnitGraph, dependsLabel, requirementState, type StatePresentation } from './planModel'
 import { FinalizeControl } from './FinalizeControl'
+import { UnitGraph } from './UnitGraph'
 
 /**
  * PLAN PANEL — the live Flight Plan beside the transcript. Reads the plan
@@ -32,6 +33,9 @@ export function PlanPanel({ plan, planId }: { plan: PlanDetail; planId: string }
   const units = plan.units ?? []
   const readiness = plan.readiness ?? []
   const childRuns = plan.child_runs ?? []
+  // Only surface the DAG once units actually declare (resolvable) dependencies —
+  // otherwise the seq-ordered list above already tells the whole story.
+  const hasDeps = buildUnitGraph(units).edges.length > 0
 
   return (
     <aside aria-label="Flight plan" className="flex flex-col gap-4">
@@ -86,6 +90,12 @@ export function PlanPanel({ plan, planId }: { plan: PlanDetail; planId: string }
           </ol>
         )}
       </Section>
+
+      {hasDeps && (
+        <Section title="Dependency Graph" count={units.length} caption="Unit DAG">
+          <UnitGraph units={units} />
+        </Section>
+      )}
 
       <Section title="Readiness" count={readiness.length} caption="Go / no-go gate">
         {readiness.length === 0 ? (

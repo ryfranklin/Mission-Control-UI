@@ -1,3 +1,5 @@
+import type { UnitModel } from '../../api'
+
 /**
  * Planner console model helpers — the pure, React-free layer for the INCEPTION
  * session.
@@ -247,4 +249,140 @@ export function dependsLabel(dependsOn: unknown[] | null | undefined): string[] 
     const s = String(d).trim()
     return /^\d+$/.test(s) ? `#${s}` : s
   })
+}
+
+// ---------------------------------------------------------------------------
+// Unit dependency graph (DAG) layout
+// ---------------------------------------------------------------------------
+
+/**
+ * Pull the numeric unit-seq references out of a `depends_on` list. The seam
+ * types the field `unknown[]`, so entries arrive as numbers, numeric strings,
+ * or (until the backend enrichment lands) opaque non-numeric identifiers we
+ * cannot place on the graph. Only the numeric refs survive here.
+ */
+export function dependsSeqs(dependsOn: unknown[] | null | undefined): number[] {
+  if (!Array.isArray(dependsOn)) return []
+  const out: number[] = []
+  for (const d of dependsOn) {
+    if (typeof d === 'number' && Number.isFinite(d)) {
+      out.push(d)
+      continue
+    }
+    const s = String(d).trim()
+    if (/^\d+$/.test(s)) out.push(Number(s))
+  }
+  return out
+}
+
+/** One placed node in the {@link UnitGraph}. */
+export interface UnitGraphNode {
+  seq: number
+  title: string
+  status: string
+  taskType: string
+  phase: string
+  /** Column index — the longest dependency chain reaching this unit. */
+  level: number
+  /** Row index within the column, ordered by seq. */
+  row: number
+  /** Resolved in-graph dependencies (unit seqs that exist as nodes). */
+  deps: number[]
+}
+
+/** A directed edge dep → unit in the {@link UnitGraph}. */
+export interface UnitGraphEdge {
+  from: number
+  to: number
+}
+
+/** A laid-out dependency graph, ready for the renderer to place on a grid. */
+export interface UnitGraph {
+  nodes: UnitGraphNode[]
+  edges: UnitGraphEdge[]
+  /** Number of columns (levels) in the layout. */
+  cols: number
+  /** Widest column's row count. */
+  rows: number
+  /**
+   * Dependency refs we could NOT resolve to a node — non-numeric identifiers,
+   * self-references, or seqs pointing at a unit that isn't in the list. Surfaced
+   * so the renderer can be honest that the DAG may be incomplete (the backend
+   * `depends_on` field is untyped; see the planner schema-gap note).
+   */
+  droppedDeps: number
+}
+
+/**
+ * Lay out the work-list units as a left-to-right dependency DAG. Each unit's
+ * column is its longest dependency chain (so an edge always points rightward),
+ * and rows within a column are seq-ordered. Cycles — which a well-formed plan
+ * won't contain, but which we can't assume from an untyped field — are broken
+ * defensively so the layout always terminates.
+ */
+export function buildUnitGraph(units: readonly UnitModel[] | null | undefined): UnitGraph {
+  const list = units ?? []
+  const bySeq = new Map<number, UnitModel>(list.map((u) => [u.seq, u]))
+
+  // Resolve each unit's dependencies to in-graph seqs, counting what we drop.
+  const deps = new Map<number, number[]>()
+  let droppedDeps = 0
+  for (const u of list) {
+    const declared = Array.isArray(u.depends_on) ? u.depends_on.length : 0
+    const resolved = dependsSeqs(u.depends_on).filter((s) => bySeq.has(s) && s !== u.seq)
+    // De-dupe in case the same ref appears twice.
+    const unique = Array.from(new Set(resolved))
+    droppedDeps += declared - unique.length
+    deps.set(u.seq, unique)
+  }
+
+  // Column = longest path from a root, memoized with a cycle guard.
+  const level = new Map<number, number>()
+  const onStack = new Set<number>()
+  const levelOf = (seq: number): number => {
+    const cached = level.get(seq)
+    if (cached !== undefined) return cached
+    if (onStack.has(seq)) return 0 // cycle — break it rather than loop forever
+    onStack.add(seq)
+    let lv = 0
+    for (const d of deps.get(seq) ?? []) lv = Math.max(lv, levelOf(d) + 1)
+    onStack.delete(seq)
+    level.set(seq, lv)
+    return lv
+  }
+  for (const u of list) levelOf(u.seq)
+
+  // Bucket units into columns, seq-ordered within each.
+  const byLevel = new Map<number, UnitModel[]>()
+  for (const u of list) {
+    const lv = level.get(u.seq) ?? 0
+    const bucket = byLevel.get(lv) ?? []
+    bucket.push(u)
+    byLevel.set(lv, bucket)
+  }
+
+  const nodes: UnitGraphNode[] = []
+  let rows = 0
+  const cols = byLevel.size === 0 ? 0 : Math.max(...byLevel.keys()) + 1
+  for (let lv = 0; lv < cols; lv++) {
+    const bucket = (byLevel.get(lv) ?? []).sort((a, b) => a.seq - b.seq)
+    rows = Math.max(rows, bucket.length)
+    bucket.forEach((u, row) => {
+      nodes.push({
+        seq: u.seq,
+        title: u.title,
+        status: u.status,
+        taskType: u.task_type,
+        phase: u.phase,
+        level: lv,
+        row,
+        deps: deps.get(u.seq) ?? [],
+      })
+    })
+  }
+
+  const edges: UnitGraphEdge[] = []
+  for (const n of nodes) for (const from of n.deps) edges.push({ from, to: n.seq })
+
+  return { nodes, edges, cols, rows, droppedDeps }
 }
