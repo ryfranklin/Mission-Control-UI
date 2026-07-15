@@ -116,8 +116,10 @@ export interface paths {
         };
         /**
          * Run Changes
-         * @description The diff a **go** would apply — the material for a go/no-go decision. 404 if
-         *     the run isn't paused at the gate (no isolated worktree to diff).
+         * @description The changed-files diff for a run: the live pending diff (``phase="pending"``)
+         *     while it's running / at the gate, or the durable applied diff (``phase="applied"``)
+         *     once it has left the gate. 404 only when there's nothing to show — a sim, a
+         *     no-change burn, or a run that never produced a diff.
          */
         get: operations["run_changes_runs__run_id__changes_get"];
         put?: never;
@@ -974,6 +976,8 @@ export interface components {
             ended_at: string | null;
             /** Detail */
             detail: string | null;
+            /** Subject */
+            subject?: string | null;
         };
         /**
          * RunList
@@ -1049,6 +1053,8 @@ export interface components {
             depends_on: unknown[];
             /** Status */
             status: string;
+            /** Stage Slug */
+            stage_slug?: string | null;
         };
         /** ValidationError */
         ValidationError: {

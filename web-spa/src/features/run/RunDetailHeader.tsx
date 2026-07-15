@@ -73,6 +73,14 @@ export function RunDetailHeader({
         </div>
       </div>
 
+      {/* The task subject — set at launch, so it's shown from the dispatch state
+          onward (before any worker output or terminal summary), not a blank card. */}
+      {run.subject && (
+        <p className="mt-3 text-sm text-readout" title={run.subject}>
+          {run.subject}
+        </p>
+      )}
+
       <div className="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-4">
         <Field label="Target" title={run.target ?? undefined}>
           {run.target ?? '—'}
