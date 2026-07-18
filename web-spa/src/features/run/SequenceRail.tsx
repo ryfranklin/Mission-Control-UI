@@ -1,6 +1,8 @@
-import { Fragment } from 'react'
+import { Fragment, useState } from 'react'
 
-import { formatDuration } from '../../lib/format'
+import { DetailDrawer, DrawerField, DrawerSection } from '../../components/DetailDrawer'
+import { formatDuration, formatTimestamp } from '../../lib/format'
+import { TelemetryReadout } from './LiveTimeline'
 import {
   PHASE_GLYPH,
   PHASE_LABEL,
@@ -9,7 +11,10 @@ import {
   type BurnSummary,
   type NodeAnnotation,
   type NodePhase,
+  type TimelineItem,
 } from './runModel'
+
+const NODE_DEFS = [...RAIL_NODES, SCRUB_NODE]
 
 /**
  * SEQUENCE RAIL — the run's lifecycle as a row of milestone nodes that
@@ -61,61 +66,151 @@ const PHASE_STYLE: Record<
 }
 
 function RailNode({
+  id,
   label,
   hint,
   phase,
   annotation,
+  onSelect,
 }: {
+  id: string
   label: string
   hint: string
   phase: NodePhase
   annotation?: NodeAnnotation
+  onSelect: (id: string) => void
 }) {
   const s = PHASE_STYLE[phase]
   return (
-    <li className="flex min-w-0 flex-1 flex-col items-center gap-1.5 text-center">
-      <span
-        className={`flex h-9 w-9 items-center justify-center rounded-full border bg-console-void ${s.ring}`}
+    <li className="flex min-w-0 flex-1">
+      <button
+        type="button"
+        onClick={() => onSelect(id)}
+        aria-haspopup="dialog"
+        title={`Open ${label} detail`}
+        className="flex min-w-0 flex-1 flex-col items-center gap-1.5 rounded p-1 text-center transition-colors hover:bg-console-raised focus:outline-none focus-visible:ring-1 focus-visible:ring-status-telemetry"
       >
         <span
-          aria-hidden
-          className={`inline-block h-2.5 w-2.5 rounded-full ${s.led} ${
-            s.pulse ? 'animate-pulse motion-reduce:animate-none' : ''
-          }`}
-        />
-      </span>
-      <span className={`truncate text-[0.7rem] font-semibold uppercase tracking-wider ${s.text}`}>
-        {label}
-      </span>
-      <span className="truncate text-[0.55rem] uppercase tracking-wider text-readout-dim">
-        {hint}
-      </span>
-      <span className={`inline-flex items-center gap-1 text-[0.55rem] uppercase tracking-wider ${s.label}`}>
-        <span aria-hidden>{PHASE_GLYPH[phase]}</span>
-        {PHASE_LABEL[phase]}
-      </span>
-      {annotation?.outcome && (
-        <span
-          className={`max-w-full truncate rounded border border-console-line px-1 py-0.5 text-[0.55rem] font-semibold uppercase tracking-wider ${s.label}`}
-          title={annotation.note ?? annotation.outcome}
+          className={`flex h-9 w-9 items-center justify-center rounded-full border bg-console-void ${s.ring}`}
         >
-          {annotation.outcome}
+          <span
+            aria-hidden
+            className={`inline-block h-2.5 w-2.5 rounded-full ${s.led} ${
+              s.pulse ? 'animate-pulse motion-reduce:animate-none' : ''
+            }`}
+          />
         </span>
-      )}
-      {annotation?.elapsedMs != null && (
-        <span className="text-[0.55rem] tabular-nums text-readout-dim" title="Elapsed in node">
-          {formatDuration(annotation.elapsedMs)}
+        <span className={`truncate text-[0.7rem] font-semibold uppercase tracking-wider ${s.text}`}>
+          {label}
         </span>
-      )}
-      {annotation?.note && (
+        <span className="truncate text-[0.55rem] uppercase tracking-wider text-readout-dim">
+          {hint}
+        </span>
         <span
-          className="line-clamp-2 max-w-full text-[0.55rem] leading-tight text-readout-muted"
-          title={annotation.note}
+          className={`inline-flex items-center gap-1 text-[0.55rem] uppercase tracking-wider ${s.label}`}
         >
-          {annotation.note}
+          <span aria-hidden>{PHASE_GLYPH[phase]}</span>
+          {PHASE_LABEL[phase]}
         </span>
-      )}
+        {annotation?.outcome && (
+          <span
+            className={`max-w-full truncate rounded border border-console-line px-1 py-0.5 text-[0.55rem] font-semibold uppercase tracking-wider ${s.label}`}
+            title={annotation.note ?? annotation.outcome}
+          >
+            {annotation.outcome}
+          </span>
+        )}
+        {annotation?.elapsedMs != null && (
+          <span className="text-[0.55rem] tabular-nums text-readout-dim" title="Elapsed in node">
+            {formatDuration(annotation.elapsedMs)}
+          </span>
+        )}
+        {annotation?.note && (
+          <span
+            className="line-clamp-2 max-w-full text-[0.55rem] leading-tight text-readout-muted"
+            title={annotation.note}
+          >
+            {annotation.note}
+          </span>
+        )}
+      </button>
     </li>
+  )
+}
+
+/** HH:MM:SS of the wall clock a frame carried. */
+function clockOnly(ms: number): string {
+  const d = new Date(ms)
+  return [d.getHours(), d.getMinutes(), d.getSeconds()]
+    .map((n) => String(n).padStart(2, '0'))
+    .join(':')
+}
+
+/** The consolidated per-node view: phase, derived outcome, and every telemetry
+ *  frame the seam emitted for this lifecycle node. */
+function NodeDetail({
+  phase,
+  annotation,
+  items,
+}: {
+  phase: NodePhase
+  annotation?: NodeAnnotation
+  items: TimelineItem[]
+}) {
+  const s = PHASE_STYLE[phase]
+  return (
+    <>
+      <dl className="grid grid-cols-2 gap-x-4 gap-y-3">
+        <DrawerField label="Phase">
+          <span className={`inline-flex items-center gap-1 ${s.label}`}>
+            <span aria-hidden>{PHASE_GLYPH[phase]}</span>
+            {PHASE_LABEL[phase]}
+          </span>
+        </DrawerField>
+        <DrawerField label="Outcome">
+          <span className={annotation?.outcome ? s.label : 'text-readout-muted'}>
+            {annotation?.outcome ?? '—'}
+          </span>
+        </DrawerField>
+        {annotation?.elapsedMs != null && (
+          <DrawerField label="Elapsed in node">{formatDuration(annotation.elapsedMs)}</DrawerField>
+        )}
+      </dl>
+
+      {annotation?.note && (
+        <DrawerSection title="Note">
+          <p className="text-xs text-readout-muted">{annotation.note}</p>
+        </DrawerSection>
+      )}
+
+      <DrawerSection title={`Telemetry frames · ${items.length}`}>
+        {items.length === 0 ? (
+          <p className="text-[0.7rem] uppercase tracking-wider text-readout-dim">
+            ○ No frames for this node yet
+          </p>
+        ) : (
+          <ol className="flex flex-col gap-3">
+            {items.map((item) => (
+              <li key={item.id} className={`border-l-2 pl-3 ${s.ring}`}>
+                <div className="flex items-baseline justify-between gap-2">
+                  <span className="text-xs text-readout">{item.phase ?? '—'}</span>
+                  {item.at != null && (
+                    <span
+                      className="shrink-0 text-[0.6rem] tabular-nums text-readout-dim"
+                      title={formatTimestamp(new Date(item.at).toISOString())}
+                    >
+                      {clockOnly(item.at)}
+                    </span>
+                  )}
+                </div>
+                {item.detail && <p className="mt-0.5 text-xs text-readout-muted">{item.detail}</p>}
+                <TelemetryReadout item={item} />
+              </li>
+            ))}
+          </ol>
+        )}
+      </DrawerSection>
+    </>
   )
 }
 
@@ -172,13 +267,18 @@ export function SequenceRail({
   phases,
   annotations,
   summary,
+  transitions = [],
 }: {
   phases: Record<string, NodePhase>
   annotations?: Record<string, NodeAnnotation>
   summary?: BurnSummary
+  transitions?: TimelineItem[]
 }) {
+  const [selected, setSelected] = useState<string | null>(null)
   const scrubPhase = phases[SCRUB_NODE.id] ?? 'pending'
   const scrubEngaged = scrubPhase !== 'pending'
+
+  const selectedDef = selected ? NODE_DEFS.find((n) => n.id === selected) : undefined
 
   return (
     <section aria-label="Flight sequence" className="mc-panel p-4">
@@ -196,7 +296,14 @@ export function SequenceRail({
           const phase = phases[n.id] ?? 'pending'
           return (
             <Fragment key={n.id}>
-              <RailNode label={n.label} hint={n.hint} phase={phase} annotation={annotations?.[n.id]} />
+              <RailNode
+                id={n.id}
+                label={n.label}
+                hint={n.hint}
+                phase={phase}
+                annotation={annotations?.[n.id]}
+                onSelect={setSelected}
+              />
               {i < RAIL_NODES.length - 1 && <Connector done={phase === 'done'} />}
             </Fragment>
           )
@@ -209,15 +316,32 @@ export function SequenceRail({
         </span>
         <div className={scrubEngaged ? '' : 'opacity-50'}>
           <RailNode
+            id={SCRUB_NODE.id}
             label={SCRUB_NODE.label}
             hint={SCRUB_NODE.hint}
             phase={scrubPhase}
             annotation={annotations?.[SCRUB_NODE.id]}
+            onSelect={setSelected}
           />
         </div>
       </div>
 
       {summary?.hasAny && <BurnSummaryStrip summary={summary} />}
+
+      <DetailDrawer
+        open={selectedDef != null}
+        onClose={() => setSelected(null)}
+        eyebrow={selectedDef?.hint}
+        title={selectedDef?.label ?? ''}
+      >
+        {selectedDef && (
+          <NodeDetail
+            phase={phases[selectedDef.id] ?? 'pending'}
+            annotation={annotations?.[selectedDef.id]}
+            items={transitions.filter((t) => t.node === selectedDef.id)}
+          />
+        )}
+      </DetailDrawer>
     </section>
   )
 }

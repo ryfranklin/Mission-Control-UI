@@ -55,7 +55,7 @@ function tokenCell(t: StepTelemetry): Cell | null {
   return null
 }
 
-function Telemetry({ item }: { item: TimelineItem }) {
+export function TelemetryReadout({ item }: { item: TimelineItem }) {
   const t = item.telemetry
   if (!t) return null
   const cells: Cell[] = []
@@ -138,7 +138,7 @@ function TimelineRow({ item }: { item: TimelineItem }) {
         )}
       </div>
       {item.detail && <p className="mt-0.5 text-xs text-readout-muted">{item.detail}</p>}
-      <Telemetry item={item} />
+      <TelemetryReadout item={item} />
     </li>
   )
 }

@@ -93,7 +93,7 @@ export function PlanPanel({ plan, planId }: { plan: PlanDetail; planId: string }
 
       {hasDeps && (
         <Section title="Dependency Graph" count={units.length} caption="Unit DAG">
-          <UnitGraph units={units} />
+          <UnitGraph units={units} childRuns={childRuns} />
         </Section>
       )}
 

@@ -97,6 +97,7 @@ export function RunStationView({ runId, onExit }: { runId: string; onExit: () =>
               phases={feed.railPhases}
               annotations={annotations}
               summary={burnSummary}
+              transitions={feed.transitions}
             />
 
             <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1.6fr_1fr]">
