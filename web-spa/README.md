@@ -1,8 +1,24 @@
 # web-spa — Mission Control operator console
 
-A Vite + React + TypeScript single-page app. It is a **thin HTTP/SSE client** of
-the Mission Control service seam: it renders operator state and streams
-telemetry; it holds no business logic and mutates no backend behavior.
+A Vite + React + TypeScript single-page app: the operator's **control room** for
+[Mission Control](https://github.com/ryfranklin/Mission-Control) — the durable,
+observable, cost-aware runtime for coding agents. It is a **thin HTTP/SSE client** of the Mission
+Control service seam: it renders operator state and streams telemetry; it holds
+no business logic and mutates no backend behavior.
+
+Mission Control's design is **one seam, many clients** — a FastAPI service wraps
+the runtime and the CLI, the server-rendered htmx UI, and a planned Slack app all
+drive it over the same HTTP API without re-implementing any orchestration. This
+SPA is another such client: a richer, browser-native console over the exact same
+endpoints. It **decides nothing** — the Flight Director orchestrates, the gate
+gates, the graph stays durable; this app only shows the operator what is true and
+transmits their commands.
+
+The console speaks Mission Control's vocabulary throughout — **Flight Director**
+(orchestrator), **Controller** (worker), **sim** (read-only task) / **burn**
+(side-effectful task), **go** / **no-go** (the approval gate), and **scrub** (kill
++ teardown). See the main project's `roles.py` for the one place that vocabulary
+is defined.
 
 ## Configuration (env-only, repo-agnostic)
 
@@ -23,6 +39,10 @@ npm run dev        # Vite dev server on :5173, proxies seam routes to the API
 npm run build      # type-check + production build to dist/
 npm run preview    # serve the production build locally
 ```
+
+Point it at a live seam first — stand up Mission Control's service
+(`python -m mission_control.service`, FastAPI on `127.0.0.1:8000`) and set
+`VITE_MC_SERVICE_BASE_URL` to it.
 
 In dev, Vite proxies the seam routes (`/runs`, `/targets`, `/metrics`,
 `/plans`, `/openapi.json`, and their SSE feeds) to `VITE_MC_SERVICE_BASE_URL`,
@@ -69,13 +89,18 @@ but frame decoding is left to the Planner unit.
 (`console.*`), and semantic status accents — `status.go` (green = GO),
 `status.flight` (amber = in-flight / UNRECONCILED), `status.fault` (red = NO-GO
 / fault), `status.telemetry` (cyan = live telemetry). Monospace with tabular
-figures is the default so telemetry columns align.
+figures is the default so telemetry columns align. Status is always carried by
+**tone plus a redundant glyph/label**, never hue alone.
 
 ## Views
 
-The app shell (`src/App.tsx`) is a hash-routed switcher — `#/fleet` (the
-default landing view) and `#/metrics` — so each view is a shareable, reloadable
-URL that stays robust under FastAPI StaticFiles (no server catch-all needed).
+The app shell (`src/App.tsx`) is a hash-routed switcher — top-level `#/fleet`
+(the default landing view), `#/metrics`, and `#/planner`, plus the nested drill
+routes `#/runs/{id}` (Run station) and `#/plans/{id}` (Plan console) — so every
+view is a shareable, reloadable URL that stays robust under FastAPI StaticFiles
+(no server catch-all needed). Heavier views (Metrics' charts, the Run station's
+SSE machinery, the Planner's streaming) are **lazy-loaded** so the Fleet landing
+bundle stays lean.
 
 - **Fleet** (`src/features/fleet/`) — a board of active-run "station cards"
   from `GET /runs`, refreshed by **TanStack Query polling every ~4s** (not SSE —
@@ -87,6 +112,29 @@ URL that stays robust under FastAPI StaticFiles (no server catch-all needed).
   terminal — a `$0` is never shown as "free". Target / time-window / paging
   filters go to the seam; status filter and sort are applied client-side over
   the page.
+- **Run station** (`src/features/run/`) — the per-run hero, reached from a Fleet
+  card's "Station ▸". A **lifecycle rail** (`SequenceRail`) plots the run's node
+  progression; a **live SSE timeline** (`LiveTimeline`, native `EventSource`)
+  scrolls every `node_transition` frame with priced per-step telemetry (tokens,
+  cost, latency, model). The timeline **replays durable history first** and then
+  tails live, so a reload or restart shows the *whole* run, not just the resume
+  leg. A **cost ticker** keeps the same UNRECONCILED-until-terminal honesty. The
+  **gate command panel** (`GatePanel`) transmits the operator's choice —
+  **GO**/**NO-GO** appear only while the run is parked at the go/no-go gate,
+  **SCRUB** is a guarded arm→confirm control that auto-disarms, and **CANCEL**
+  aborts an in-flight run. For a `burn`, `GateDiff` renders the pending change so
+  the operator gates with the diff in front of them.
+- **Planner** (`src/features/planner/`) — the **Flight Plan** roster (`GET
+  /plans`, gently polled) and the NEW-PLAN control that opens an AI-DLC
+  **INCEPTION** session. Selecting a plan drills into the **Plan console**
+  (`#/plans/{id}`): a streamed, terminal-styled conversation with the Flight
+  Director beside the live Flight Plan. `usePlanTurnStream` transmits an operator
+  turn over `POST /plans/{id}/turns/stream` (fetch + `ReadableStream`, since
+  `EventSource` can't POST) and fills the transcript token-by-token, then
+  re-reads the plan aggregate so the PLAN PANEL reflects new
+  requirements/units/stage. A **unit dependency DAG** (`UnitGraph`) draws the
+  work-list from `units[].depends_on` — units flowing left→right along their
+  longest chain — and finalizing the plan launches its units as gated runs.
 - **Metrics** (`src/features/metrics/`) — cost/quality rollups from
   `GET /metrics`, scoped by target + time window via the endpoint's query
   params. Renders scoped rollup figures and trend sparklines (Recharts). The
@@ -97,6 +145,10 @@ URL that stays robust under FastAPI StaticFiles (no server catch-all needed).
 
 ## Scope
 
-This directory is the entire SPA. This unit lands the Fleet and Metrics views;
-the Run station, Gate, and Planner views are built in later units — the Fleet
-card's "Station ▸" affordance is a non-functional placeholder until then.
+This directory is the entire SPA. It lands the full operator loop — **Fleet →
+Run station (with the go/no-go gate) → Metrics**, plus the **Planner** console
+for AI-DLC inception — all as thin, typed clients of the one Mission Control
+seam. It is demo-grade alongside the runtime it fronts: the seam is **localhost,
+no auth** in v1, so this console assumes a same-origin, single-operator context.
+Identity/auth on every client is the runtime's graduation gate to production —
+see the main project's `docs/PHASE5*_FINDINGS.md`.
